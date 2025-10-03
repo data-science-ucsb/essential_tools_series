@@ -3,64 +3,68 @@ import pandas as pd
 import numpy as np
 from visualize import show_fit
 
-CSV_PATH = "data/raw/___"  #<<< CHANGE THE BLANK TO YOUR CSV PATH in data/raw >>>
+#-------- Setup --------
+# python -m venv .venv
+# source .venv/bin/activate  # MacOS/Linux
+# .\.venv\Scripts\activate   # Windows
+# pip install -r requirements.txt
 
-#<<< CHANGE THESE TO YOUR COLUMN NAMES >>>
-COL_X = "___"   # e.g., "hours_studied"
-COL_Y = "___"   # e.g., "exam_score"
+#-------- CSVS --------
+# Example CSVs:
+# - salaries.csv (Hard)
+# - housing.csv (Medium)
+# - studying.csv (Easy)
 
-#1) Load CSV
+#-------- Usage --------
+# python main.py [csv_name] [COL_X] [COL_Y]
+
+# -------- CLI / Defaults --------
+CSV_PATH = "data/raw/"
+CSV_PATH += sys.argv[1] if len(sys.argv) > 1 else "salaries.csv"
+COL_X    = sys.argv[2] if len(sys.argv) > 2 else "Years of Experience"
+COL_Y    = sys.argv[3] if len(sys.argv) > 3 else "Salary"
+
+# -------- Load & peek --------
 df = pd.read_csv(CSV_PATH)
 
-#If columns not set, show options and exit
-if COL_X == "___" or COL_Y == "___" or COL_X not in df.columns or COL_Y not in df.columns:
-    print("\nSet COL_X and COL_Y to valid column names from your CSV.")
-    print("Available columns:", list(df.columns))
-    sys.exit(1)
-
-#2) Quick look at the dataset
 print("\n=== HEAD ===")
 print(df.head().to_string(index=False))
 
 print("\n=== INFO ===")
 df.info()
 
-print("\n=== DESCRIBE (numeric) ===")
-print(df.describe(numeric_only=True).to_string())
+print("\n=== DESCRIBE ===")
+print(df.describe(include="all").transpose().to_string())
 
-# 3)Keep just the two columns we care about and drop missing rows
+# -------- Pick two columns --------
+if COL_X not in df.columns or COL_Y not in df.columns:
+    print(f"\nSet valid columns. Available: {list(df.columns)}")
+    sys.exit(1)
+
 data = df[[COL_X, COL_Y]].copy()
-data = data.dropna(subset=[COL_X, COL_Y])
 
-# 4)Change em to numeric (anything non-numeric becomes NaN), then drop NAs again
-data[COL_X] = pd.to_numeric(data[COL_X], errors="coerce")
-data[COL_Y] = pd.to_numeric(data[COL_Y], errors="coerce")
+# -------- Clean & drop NAs --------
+for col in [COL_X, COL_Y]:
+    data[col] = pd.to_numeric(
+        data[col].astype(str).str.replace(",", "").str.replace("$", "").str.replace("%", ""),
+        errors="coerce"
+    )
+
 before = len(data)
-data = data.dropna(subset=[COL_X, COL_Y])
-print(f"\nDropped {before - len(data)} rows after coercing to numeric and removing NAs.")
+data = data.dropna()
+print(f"\nDropped {before - len(data)} rows after cleaning & removing NAs.")
 
-# 5)Remove simple outliers with z-scores (|z| <= 3)
-x_mean, x_std = data[COL_X].mean(), data[COL_X].std(ddof=0)
-y_mean, y_std = data[COL_Y].mean(), data[COL_Y].std(ddof=0)
-
-#Avoid divide-by-zero if variance is 0
-if x_std == 0 or y_std == 0:
-    print("\nWarning: zero variance detected; skipping outlier filtering.")
-else:
-    z_x = (data[COL_X] - x_mean) / x_std
-    z_y = (data[COL_Y] - y_mean) / y_std
-    kept = (z_x.abs() <= 3) & (z_y.abs() <= 3)
-    removed = (~kept).sum()
-    data = data[kept]
-    print(f"Removed {removed} potential outliers using |z| <= 3.")
-
-#6)Fit the line of best fit: y ≈ m*x + b
+# -------- Regression --------
 x = data[COL_X].to_numpy()
 y = data[COL_Y].to_numpy()
-m, b = np.polyfit(x, y, 1)
+
+if len(x) < 2:
+    raise ValueError("Not enough data points to fit a line.")
+
+m, b = np.polyfit(x, y, 1,)
 print(f"\nRegression: {COL_Y} ≈ {m:.4f} * {COL_X} + {b:.4f}")
 
-#7) Plot
+# -------- Plot --------
 show_fit(
     x=x,
     y=y,
